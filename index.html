@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EVE Mineral Arbitrage Scanner</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #050a0f;
+    --bg2: #080e15;
+    --panel: #0a1520;
+    --panel2: #0d1c2b;
+    --border: #1a3a5c;
+    --border-bright: #1e6fa8;
+    --accent: #00c8ff;
+    --accent2: #0af;
+    --green: #00ff88;
+    --yellow: #ffcc00;
+    --red: #ff4455;
+    --text: #c8dde8;
+    --text-dim: #5a8aa8;
+    --text-bright: #e8f4ff;
+    --mono: 'Share Tech Mono', monospace;
+    --sans: 'Exo 2', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--sans); min-height: 100vh; overflow-x: hidden;
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,200,255,0.012) 2px, rgba(0,200,255,0.012) 4px);
+    pointer-events: none; z-index: 999;
+  }
+  body::after {
+    content: ''; position: fixed; inset: 0;
+    background-image: linear-gradient(rgba(0,200,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,200,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px; pointer-events: none; z-index: 0;
+  }
+  .wrapper { position: relative; z-index: 1; max-width: 1500px; margin: 0 auto; padding: 0 20px 60px; }
+
+  /* HEADER */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 0 16px; border-bottom: 1px solid var(--border);
+    margin-bottom: 24px; gap: 16px; flex-wrap: wrap;
+  }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-icon {
+    width: 42px; height: 42px;
+    background: linear-gradient(135deg, #003860, #0077b6);
+    border: 1px solid var(--accent);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    display: flex; align-items: center; justify-content: center; font-size: 18px;
+    box-shadow: 0 0 20px rgba(0,200,255,0.25);
+  }
+  .logo-text .title { font-family: var(--mono); font-size: 18px; color: var(--accent); letter-spacing: 2px; text-transform: uppercase; }
+  .logo-text .sub { font-family: var(--mono); font-size: 11px; color: var(--text-dim); letter-spacing: 3px; text-transform: uppercase; margin-top: 2px; }
+  .header-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .status-pill {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--panel); border: 1px solid var(--border);
+    padding: 6px 12px; font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+  }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); transition: background 0.3s; }
+  .status-dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+  .status-dot.loading { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); animation: pulse 0.6s infinite; }
+  .status-dot.error { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+  /* CONTROLS */
+  .controls {
+    background: var(--panel); border: 1px solid var(--border);
+    padding: 20px; margin-bottom: 16px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 14px; align-items: end;
+  }
+  .control-group label {
+    display: block; font-family: var(--mono); font-size: 10px; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 2px; margin-bottom: 6px;
+  }
+  select, input[type=number] {
+    width: 100%; background: var(--bg2); border: 1px solid var(--border);
+    color: var(--text); padding: 8px 10px; font-family: var(--mono); font-size: 13px;
+    appearance: none; outline: none; transition: border-color 0.2s;
+  }
+  select:focus, input[type=number]:focus { border-color: var(--accent); }
+  select option { background: var(--bg2); }
+  .btn-row { display: flex; gap: 8px; align-items: flex-end; }
+  .btn {
+    flex: 1; padding: 10px 16px; background: transparent;
+    border: 1px solid var(--accent); color: var(--accent);
+    font-family: var(--mono); font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 2px; cursor: pointer;
+    transition: all 0.2s; position: relative; overflow: hidden; white-space: nowrap;
+  }
+  .btn::before {
+    content: ''; position: absolute; inset: 0; background: var(--accent);
+    transform: translateX(-101%); transition: transform 0.2s; z-index: 0;
+  }
+  .btn:hover::before { transform: translateX(0); }
+  .btn span { position: relative; z-index: 1; }
+  .btn:hover { color: var(--bg); }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+  .btn.secondary { border-color: var(--border-bright); color: var(--text-dim); }
+  .btn.secondary::before { background: var(--border-bright); }
+  .btn.secondary:hover { color: var(--bg); }
+
+  /* NOTE */
+  .note {
+    background: rgba(0,200,255,0.04); border: 1px solid rgba(0,200,255,0.15);
+    padding: 10px 16px; font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+    margin-bottom: 16px; line-height: 1.7;
+  }
+  .note strong { color: var(--accent2); }
+
+  /* ERROR */
+  .error-banner {
+    background: rgba(255,68,85,0.08); border: 1px solid rgba(255,68,85,0.35);
+    padding: 10px 16px; font-family: var(--mono); font-size: 12px; color: var(--red);
+    margin-bottom: 14px; display: none; line-height: 1.6;
+  }
+  .error-banner.visible { display: block; }
+
+  /* PROGRESS */
+  .progress-wrap { background: var(--panel); border: 1px solid var(--border); padding: 14px 20px; margin-bottom: 16px; display: none; }
+  .progress-wrap.visible { display: block; }
+  .progress-info { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-bottom: 8px; }
+  .progress-track { height: 3px; background: var(--border); position: relative; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, #0050a0, var(--accent)); width: 0%; transition: width 0.4s; box-shadow: 0 0 8px var(--accent); }
+
+  /* SUMMARY */
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .summary-card { background: var(--panel); border: 1px solid var(--border); padding: 12px 16px; position: relative; overflow: hidden; }
+  .summary-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: 0.4; }
+  .card-label { font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 5px; }
+  .card-value { font-family: var(--mono); font-size: 20px; color: var(--text-bright); font-weight: 700; }
+  .card-value.green { color: var(--green); }
+  .card-value.yellow { color: var(--yellow); }
+
+  /* FILTERS */
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+  .filter-label { font-family: var(--mono); font-size: 10px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; }
+  .filter-chip {
+    padding: 4px 11px; border: 1px solid var(--border); background: transparent;
+    color: var(--text-dim); font-family: var(--mono); font-size: 11px; cursor: pointer; transition: all 0.15s;
+  }
+  .filter-chip.active { border-color: var(--accent); color: var(--accent); background: rgba(0,200,255,0.07); }
+
+  /* TABLE */
+  .results-wrap { background: var(--panel); border: 1px solid var(--border); overflow: hidden; }
+  .results-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 11px 16px; border-bottom: 1px solid var(--border); background: var(--panel2);
+    gap: 10px; flex-wrap: wrap;
+  }
+  .results-title { font-family: var(--mono); font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: 2px; }
+  .results-count { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  thead tr { border-bottom: 1px solid var(--border); background: var(--panel2); }
+  th {
+    padding: 9px 13px; text-align: left; color: var(--text-dim);
+    font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px;
+    white-space: nowrap; cursor: pointer; user-select: none; transition: color 0.15s;
+  }
+  th:hover { color: var(--accent); }
+  th.sorted { color: var(--accent); }
+  tbody tr { border-bottom: 1px solid rgba(26,58,92,0.4); transition: background 0.1s; }
+  tbody tr:hover { background: rgba(0,200,255,0.035); }
+  td { padding: 9px 13px; white-space: nowrap; color: var(--text); }
+  .mineral-name { display: flex; align-items: center; gap: 7px; color: var(--text-bright); font-weight: 600; }
+  .mineral-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .profit-value.high { color: var(--green); font-weight: 700; }
+  .profit-value.medium { color: var(--yellow); font-weight: 700; }
+  .profit-value.low { color: var(--text-dim); }
+  .pct-bar-wrap { display: flex; align-items: center; gap: 7px; min-width: 110px; }
+  .pct-bar-bg { flex: 1; height: 3px; background: var(--border); position: relative; min-width: 50px; }
+  .pct-bar-fill { position: absolute; left: 0; top: 0; height: 100%; }
+  .b-green { background: var(--green); box-shadow: 0 0 4px var(--green); }
+  .b-yellow { background: var(--yellow); box-shadow: 0 0 4px var(--yellow); }
+  .b-dim { background: var(--text-dim); }
+  .pct-value { font-size: 11px; min-width: 42px; text-align: right; }
+  .hub-badge { display: inline-block; background: rgba(0,200,255,0.08); border: 1px solid var(--border-bright); padding: 2px 7px; font-size: 10px; color: var(--accent2); text-transform: uppercase; letter-spacing: 1px; }
+  .region-name { color: var(--text); }
+  .empty-state { padding: 50px 20px; text-align: center; color: var(--text-dim); font-family: var(--mono); font-size: 12px; line-height: 2; }
+
+  /* Mineral colours */
+  .c-trit { background: #a0a0c0; } .c-pyer { background: #e06020; } .c-mexa { background: #30c080; }
+  .c-iso  { background: #4080e0; } .c-noc  { background: #c040c0; } .c-zyd  { background: #20c0c0; }
+  .c-meg  { background: #e0c000; } .c-mor  { background: #ff4090; }
+
+  @media (max-width: 700px) { .controls { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon">◆</div>
+      <div class="logo-text">
+        <div class="title">Arbitrage Scanner</div>
+        <div class="sub">EVE Online · Minerals</div>
+      </div>
+    </div>
+    <div class="header-status">
+      <div class="status-pill"><div class="status-dot" id="statusDot"></div><span id="statusText">IDLE</span></div>
+      <div class="status-pill">ESI · esi.evetech.net</div>
+      <div class="status-pill" id="lastRefresh">NEVER SCANNED</div>
+    </div>
+  </header>
+
+  <div class="note">
+    <strong>NOTE:</strong> Scans all k-space regions via ESI public market API.
+    Hub prices use the <strong>lowest active sell order</strong> in that hub's region.
+    Source prices represent the cheapest sell orders needed to fill your minimum volume.
+    A full scan covers ~50 regions × 8 minerals and takes <strong>2–4 minutes</strong> depending on ESI load.
+    Taxes and hauling costs are <strong>not</strong> included — factor in ~8–15% for broker fees + sales tax.
+  </div>
+
+  <div class="controls">
+    <div class="control-group">
+      <label>Compare Against Hub</label>
+      <select id="hubSelect">
+        <option value="all">All Hubs (Best Destination)</option>
+        <option value="jita">Jita (The Forge)</option>
+        <option value="amarr">Amarr (Domain)</option>
+        <option value="dodixie">Dodixie (Sinq Laison)</option>
+        <option value="hek">Hek (Metropolis)</option>
+        <option value="rens">Rens (Heimatar)</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label>Min Profit % (before fees)</label>
+      <input type="number" id="minProfit" value="5" min="0" max="500" step="1">
+    </div>
+    <div class="control-group">
+      <label>Min Volume at Source (m³)</label>
+      <input type="number" id="minVolume" value="60000" min="1000" step="1000">
+    </div>
+    <div class="control-group">
+      <label>Exclude Hub Regions as Source</label>
+      <select id="excludeHubs">
+        <option value="yes">Yes (recommended)</option>
+        <option value="no">No (include hub regions)</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label>Actions</label>
+      <div class="btn-row">
+        <button class="btn" id="scanBtn" onclick="startScan()"><span>◈ Scan</span></button>
+        <button class="btn secondary" onclick="clearResults()"><span>✕</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="error-banner" id="errorBanner"></div>
+
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-info">
+      <span id="progressLabel">Initialising…</span>
+      <span id="progressPct">0%</span>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
+
+  <div class="summary-grid" id="summaryGrid" style="display:none">
+    <div class="summary-card"><div class="card-label">Opportunities</div><div class="card-value green" id="sumOpps">0</div></div>
+    <div class="summary-card"><div class="card-label">Best Profit %</div><div class="card-value yellow" id="sumBestPct">—</div></div>
+    <div class="summary-card"><div class="card-label">Best ISK/Unit</div><div class="card-value" id="sumBestISK">—</div></div>
+    <div class="summary-card"><div class="card-label">Regions Scanned</div><div class="card-value" id="sumRegions">0</div></div>
+    <div class="summary-card"><div class="card-label">Orders Analysed</div><div class="card-value" id="sumOrders">0</div></div>
+    <div class="summary-card"><div class="card-label">Scan Duration</div><div class="card-value" id="sumDuration">—</div></div>
+  </div>
+
+  <div class="filters" id="filterRow" style="display:none">
+    <span class="filter-label">Mineral:</span>
+    <button class="filter-chip active" data-mineral="all"        onclick="setFilter('all')">All</button>
+    <button class="filter-chip"        data-mineral="Tritanium"  onclick="setFilter('Tritanium')">Tritanium</button>
+    <button class="filter-chip"        data-mineral="Pyerite"    onclick="setFilter('Pyerite')">Pyerite</button>
+    <button class="filter-chip"        data-mineral="Mexallon"   onclick="setFilter('Mexallon')">Mexallon</button>
+    <button class="filter-chip"        data-mineral="Isogen"     onclick="setFilter('Isogen')">Isogen</button>
+    <button class="filter-chip"        data-mineral="Nocxium"    onclick="setFilter('Nocxium')">Nocxium</button>
+    <button class="filter-chip"        data-mineral="Zydrine"    onclick="setFilter('Zydrine')">Zydrine</button>
+    <button class="filter-chip"        data-mineral="Megacyte"   onclick="setFilter('Megacyte')">Megacyte</button>
+    <button class="filter-chip"        data-mineral="Morphite"   onclick="setFilter('Morphite')">Morphite</button>
+  </div>
+
+  <div class="results-wrap">
+    <div class="results-header">
+      <div class="results-title">◈ Arbitrage Opportunities</div>
+      <div class="results-count" id="resultsCount">No data — configure and press Scan</div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="sortBy('mineral')"        id="th-mineral">Mineral</th>
+            <th onclick="sortBy('sourceRegion')"   id="th-sourceRegion">Source Region</th>
+            <th onclick="sortBy('sourcePrice')"    id="th-sourcePrice">Buy Price (ea)</th>
+            <th onclick="sortBy('sourceVolumeM3')" id="th-sourceVolumeM3">Available Vol (m³)</th>
+            <th onclick="sortBy('destHub')"        id="th-destHub">Sell At Hub</th>
+            <th onclick="sortBy('destPrice')"      id="th-destPrice">Hub Sell Price</th>
+            <th onclick="sortBy('profitPct')"      id="th-profitPct" class="sorted">Profit % ↓</th>
+            <th onclick="sortBy('profitPerUnit')"  id="th-profitPerUnit">Profit / Unit</th>
+            <th onclick="sortBy('totalProfit')"    id="th-totalProfit">Est. Gross Profit</th>
+          </tr>
+        </thead>
+        <tbody id="resultsBody">
+          <tr><td colspan="9"><div class="empty-state">◈<br>Awaiting scan.<br>Press Scan to fetch live market data from ESI.</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+<script>
+// ── Constants ──────────────────────────────────────────────────────────────────
+const ESI_BASE = 'https://esi.evetech.net/latest';
+
+const MINERALS = [
+  { id: 34,    name: 'Tritanium', vol: 0.01, cls: 'c-trit' },
+  { id: 35,    name: 'Pyerite',   vol: 0.01, cls: 'c-pyer' },
+  { id: 36,    name: 'Mexallon',  vol: 0.01, cls: 'c-mexa' },
+  { id: 37,    name: 'Isogen',    vol: 0.01, cls: 'c-iso'  },
+  { id: 38,    name: 'Nocxium',   vol: 0.01, cls: 'c-noc'  },
+  { id: 39,    name: 'Zydrine',   vol: 0.01, cls: 'c-zyd'  },
+  { id: 40,    name: 'Megacyte',  vol: 0.01, cls: 'c-meg'  },
+  { id: 11399, name: 'Morphite',  vol: 0.01, cls: 'c-mor'  },
+];
+
+const HUBS = {
+  jita:    { name: 'Jita',    regionId: 10000002, regionName: 'The Forge' },
+  amarr:   { name: 'Amarr',   regionId: 10000043, regionName: 'Domain' },
+  dodixie: { name: 'Dodixie', regionId: 10000032, regionName: 'Sinq Laison' },
+  hek:     { name: 'Hek',     regionId: 10000042, regionName: 'Metropolis' },
+  rens:    { name: 'Rens',    regionId: 10000030, regionName: 'Heimatar' },
+};
+
+const HUB_REGION_IDS = new Set(Object.values(HUBS).map(h => h.regionId));
+
+// ── State ──────────────────────────────────────────────────────────────────────
+let allResults = [];
+let sortCol = 'profitPct';
+let sortAsc = false;
+let mineralFilter = 'all';
+let scanning = false;
+let g_regions = 0, g_orders = 0;
+
+// ── ESI helpers ────────────────────────────────────────────────────────────────
+async function esiGet(path) {
+  const url = ESI_BASE + path;
+  const r = await fetch(url, { headers: { 'Accept': 'application/json', 'User-Agent': 'EVE-Mineral-Arb-Scanner/2.0' } });
+  if (!r.ok) throw new Error(`ESI ${r.status} on ${path}`);
+  return { data: await r.json(), pages: parseInt(r.headers.get('X-Pages') || '1', 10) };
+}
+
+async function esiGetAll(path) {
+  const sep = path.includes('?') ? '&' : '?';
+  const first = await esiGet(path + sep + 'page=1');
+  if (first.pages === 1) return first.data;
+  const rest = await Promise.all(
+    Array.from({ length: first.pages - 1 }, (_, i) =>
+      esiGet(path + sep + `page=${i + 2}`).then(r => r.data).catch(() => [])
+    )
+  );
+  return first.data.concat(...rest);
+}
+
+// Rate-limited fetch queue — max N concurrent
+function makeQueue(concurrency) {
+  let active = 0;
+  const queue = [];
+  const run = () => {
+    while (active < concurrency && queue.length) {
+      active++;
+      const { fn, resolve, reject } = queue.shift();
+      fn().then(v => { active--; resolve(v); run(); }).catch(e => { active--; reject(e); run(); });
+    }
+  };
+  return fn => new Promise((resolve, reject) => { queue.push({ fn, resolve, reject }); run(); });
+}
+
+const enqueue = makeQueue(10); // 10 concurrent ESI requests
+
+// ── Main scan ──────────────────────────────────────────────────────────────────
+async function startScan() {
+  if (scanning) return;
+  scanning = true;
+  const scanBtn = document.getElementById('scanBtn');
+  scanBtn.disabled = true;
+  setStatus('loading', 'SCANNING');
+  hideError();
+  showProgress(true, 'Fetching region list…', 0);
+  allResults = [];
+  g_regions = 0; g_orders = 0;
+
+  const hubKey     = document.getElementById('hubSelect').value;
+  const minPct     = parseFloat(document.getElementById('minProfit').value) || 0;
+  const minVolM3   = parseFloat(document.getElementById('minVolume').value) || 60000;
+  const exclHubs   = document.getElementById('excludeHubs').value === 'yes';
+  const scanHubs   = hubKey === 'all' ? Object.values(HUBS) : [HUBS[hubKey]];
+
+  const t0 = Date.now();
+
+  try {
+    // 1. Get all k-space region IDs
+    const { data: allRegionIds } = await esiGet('/universe/regions/');
+    let regionIds = allRegionIds.filter(id => id >= 10000001 && id <= 10000069);
+    if (exclHubs) regionIds = regionIds.filter(id => !HUB_REGION_IDS.has(id));
+
+    // 2. Fetch region names
+    showProgress(true, 'Loading region metadata…', 2);
+    const regionNames = {};
+    await Promise.all(regionIds.map(id =>
+      enqueue(() => esiGet(`/universe/regions/${id}/`))
+        .then(r => { regionNames[id] = r.data.name; })
+        .catch(() => { regionNames[id] = `Region ${id}`; })
+    ));
+
+    // 3. Fetch hub sell prices for each mineral
+    showProgress(true, 'Fetching hub prices…', 8);
+    // hubMinSell[hubName][typeId] = min sell price in hub region
+    const hubMinSell = {};
+    await Promise.all(scanHubs.map(async hub => {
+      hubMinSell[hub.name] = {};
+      await Promise.all(MINERALS.map(mineral =>
+        enqueue(() => esiGetAll(`/markets/${hub.regionId}/orders/?type_id=${mineral.id}&order_type=sell`))
+          .then(orders => {
+            if (orders.length) hubMinSell[hub.name][mineral.id] = Math.min(...orders.map(o => o.price));
+          })
+          .catch(() => {})
+      ));
+    }));
+
+    // 4. Scan each source region
+    const total = regionIds.length;
+    let done = 0;
+
+    await Promise.all(regionIds.map(regionId =>
+      enqueue(async () => {
+        try {
+          // Get active sell types in this region
+          const types = await esiGetAll(`/markets/${regionId}/types/`);
+          const relevantMinerals = MINERALS.filter(m => types.includes(m.id));
+
+          for (const mineral of relevantMinerals) {
+            const orders = await esiGetAll(`/markets/${regionId}/orders/?type_id=${mineral.id}&order_type=sell`);
+            if (!orders.length) continue;
+            g_orders += orders.length;
+
+            // Min units needed to fill minVolM3
+            const minUnits = Math.ceil(minVolM3 / mineral.vol);
+
+            // Sort cheapest first
+            orders.sort((a, b) => a.price - b.price);
+
+            // Walk cheapest orders to fill minUnits
+            let filled = 0, spent = 0;
+            for (const o of orders) {
+              if (filled >= minUnits) break;
+              const take = Math.min(o.volume_remain, minUnits - filled);
+              spent += take * o.price;
+              filled += take;
+            }
+            if (filled < minUnits) continue; // Not enough supply
+
+            const avgBuyPrice = spent / filled;
+            const totalUnitsAvail = orders.reduce((s, o) => s + o.volume_remain, 0);
+            const availM3 = totalUnitsAvail * mineral.vol;
+
+            for (const hub of scanHubs) {
+              const hubPrice = hubMinSell[hub.name]?.[mineral.id];
+              if (!hubPrice) continue;
+
+              const profitPerUnit = hubPrice - avgBuyPrice;
+              const profitPct = (profitPerUnit / avgBuyPrice) * 100;
+
+              if (profitPct >= minPct && profitPerUnit > 0) {
+                allResults.push({
+                  mineral: mineral.name,
+                  mineralCls: mineral.cls,
+                  sourceRegion: regionNames[regionId],
+                  sourceRegionId: regionId,
+                  sourcePrice: avgBuyPrice,
+                  sourceVolumeM3: availM3,
+                  destHub: hub.name,
+                  destPrice: hubPrice,
+                  profitPerUnit,
+                  profitPct,
+                  totalProfit: profitPerUnit * totalUnitsAvail,
+                });
+              }
+            }
+          }
+        } catch { /* skip errored region */ }
+
+        done++;
+        g_regions++;
+        showProgress(true,
+          `Scanning ${regionNames[regionId] || regionId} (${done}/${total})`,
+          8 + Math.round((done / total) * 90)
+        );
+      })
+    ));
+
+    // Done
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(0);
+    showProgress(false);
+    setStatus('live', 'LIVE');
+    document.getElementById('lastRefresh').textContent = 'SCANNED ' + new Date().toLocaleTimeString();
+    renderResults(elapsed);
+
+  } catch (e) {
+    showError('Scan failed: ' + e.message + '<br>Make sure you are accessing this page over https:// (not file://).');
+    setStatus('error', 'ERROR');
+    showProgress(false);
+  }
+
+  scanning = false;
+  scanBtn.disabled = false;
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────────
+function renderResults(elapsed) {
+  const minPct = parseFloat(document.getElementById('minProfit').value) || 0;
+
+  let rows = allResults.filter(r =>
+    (mineralFilter === 'all' || r.mineral === mineralFilter) && r.profitPct >= minPct
+  );
+
+  rows.sort((a, b) => {
+    let av = a[sortCol], bv = b[sortCol];
+    if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); }
+    return sortAsc ? (av < bv ? -1 : av > bv ? 1 : 0) : (av > bv ? -1 : av < bv ? 1 : 0);
+  });
+
+  // Summary
+  document.getElementById('summaryGrid').style.display = 'grid';
+  document.getElementById('filterRow').style.display  = 'flex';
+  document.getElementById('sumOpps').textContent     = rows.length;
+  document.getElementById('sumRegions').textContent  = g_regions;
+  document.getElementById('sumOrders').textContent   = g_orders.toLocaleString();
+  if (elapsed !== undefined) document.getElementById('sumDuration').textContent = elapsed + 's';
+
+  if (rows.length) {
+    const bp = rows.reduce((b, r) => r.profitPct     > b.profitPct     ? r : b, rows[0]);
+    const bi = rows.reduce((b, r) => r.profitPerUnit > b.profitPerUnit ? r : b, rows[0]);
+    document.getElementById('sumBestPct').textContent = bp.profitPct.toFixed(1) + '%';
+    document.getElementById('sumBestISK').textContent = fmtISK(bi.profitPerUnit);
+  } else {
+    document.getElementById('sumBestPct').textContent = '—';
+    document.getElementById('sumBestISK').textContent = '—';
+  }
+
+  document.getElementById('resultsCount').textContent =
+    `${rows.length} opportunit${rows.length === 1 ? 'y' : 'ies'} (${allResults.length} total before filters)`;
+
+  const tbody = document.getElementById('resultsBody');
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state">◈<br>No opportunities found matching current filters.<br>Try lowering the profit % threshold or minimum volume.</div></td></tr>`;
+    return;
+  }
+
+  const maxPct = Math.max(...rows.map(r => r.profitPct));
+
+  tbody.innerHTML = rows.map(r => {
+    const w   = Math.min((r.profitPct / maxPct) * 100, 100).toFixed(1);
+    const cls = r.profitPct >= 20 ? 'high' : r.profitPct >= 10 ? 'medium' : 'low';
+    const bar = r.profitPct >= 20 ? 'b-green' : r.profitPct >= 10 ? 'b-yellow' : 'b-dim';
+    return `
+    <tr>
+      <td><div class="mineral-name"><div class="mineral-dot ${r.mineralCls}"></div>${r.mineral}</div></td>
+      <td><span class="region-name">${r.sourceRegion}</span></td>
+      <td>${fmtISK(r.sourcePrice)}</td>
+      <td>${r.sourceVolumeM3.toLocaleString(undefined,{maximumFractionDigits:0})} m³</td>
+      <td><span class="hub-badge">${r.destHub}</span></td>
+      <td>${fmtISK(r.destPrice)}</td>
+      <td>
+        <div class="pct-bar-wrap">
+          <div class="pct-bar-bg"><div class="pct-bar-fill ${bar}" style="width:${w}%"></div></div>
+          <span class="pct-value profit-value ${cls}">${r.profitPct.toFixed(1)}%</span>
+        </div>
+      </td>
+      <td class="profit-value ${cls}">${fmtISK(r.profitPerUnit)}</td>
+      <td class="profit-value ${cls}">${fmtBig(r.totalProfit)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function fmtISK(n) {
+  if (n == null) return '—';
+  return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ISK';
+}
+function fmtBig(n) {
+  if (n == null) return '—';
+  if (n >= 1e12) return (n/1e12).toFixed(2) + 'T ISK';
+  if (n >= 1e9)  return (n/1e9).toFixed(2)  + 'B ISK';
+  if (n >= 1e6)  return (n/1e6).toFixed(2)  + 'M ISK';
+  if (n >= 1e3)  return (n/1e3).toFixed(1)  + 'K ISK';
+  return n.toFixed(2) + ' ISK';
+}
+
+function clearResults() {
+  allResults = []; g_regions = 0; g_orders = 0;
+  document.getElementById('summaryGrid').style.display = 'none';
+  document.getElementById('filterRow').style.display   = 'none';
+  document.getElementById('resultsBody').innerHTML = `<tr><td colspan="9"><div class="empty-state">◈<br>Results cleared. Press Scan to begin.</div></td></tr>`;
+  document.getElementById('resultsCount').textContent = 'No data — configure and press Scan';
+  setStatus('idle', 'IDLE');
+  document.getElementById('lastRefresh').textContent = 'NEVER SCANNED';
+  hideError();
+  showProgress(false);
+}
+
+// ── Sort & filter ──────────────────────────────────────────────────────────────
+function sortBy(col) {
+  sortAsc = sortCol === col ? !sortAsc : false;
+  sortCol = col;
+  document.querySelectorAll('th').forEach(th => {
+    th.classList.remove('sorted');
+    th.textContent = th.textContent.replace(/ [↑↓]$/, '');
+  });
+  const th = document.getElementById('th-' + col);
+  if (th) { th.classList.add('sorted'); th.textContent += ' ' + (sortAsc ? '↑' : '↓'); }
+  renderResults();
+}
+function setFilter(m) {
+  mineralFilter = m;
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.toggle('active', c.dataset.mineral === m));
+  renderResults();
+}
+
+// ── UI helpers ─────────────────────────────────────────────────────────────────
+function setStatus(s, t) {
+  document.getElementById('statusDot').className = 'status-dot ' + s;
+  document.getElementById('statusText').textContent = t;
+}
+function showProgress(vis, label = '', pct = 0) {
+  document.getElementById('progressWrap').classList.toggle('visible', vis);
+  document.getElementById('progressLabel').textContent = label;
+  document.getElementById('progressPct').textContent   = pct + '%';
+  document.getElementById('progressFill').style.width  = pct + '%';
+}
+function showError(html) {
+  const el = document.getElementById('errorBanner');
+  el.innerHTML = '⚠ ' + html;
+  el.classList.add('visible');
+}
+function hideError() { document.getElementById('errorBanner').classList.remove('visible'); }
+</script>
+</body>
+</html>
